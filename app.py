@@ -1,7 +1,6 @@
 """
-MAGERIT-OT v2.0 — Análisis de Riesgos Industrial
-Metodología MAGERIT v3.0 adaptada a entornos OT/ICS
-Sidenor Basauri — TFG Ciberseguridad Industrial
+Análisis de Riesgos Industrial
+Metodología MAGERIT adaptada a entornos OT/ICS
 """
 
 import streamlit as st
@@ -13,8 +12,8 @@ import base64, os, math
 from datetime import datetime
 
 st.set_page_config(
-    page_title="MAGERIT-OT · Sidenor",
-    page_icon="🔥",
+    page_title="MAGERIT OT/ICS",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -1060,12 +1059,12 @@ def render_sidebar():
         """, unsafe_allow_html=True)
 
         nav = st.radio("", [
-            "📊 Dashboard",
-            "🏭 Activos OT",
-            "⚠️ Amenazas OT",
-            "🛡️ Tratamiento",
-            "🧠 Motor ML",
-            "📚 Catálogos",
+            "Dashboard",
+            "Activos OT",
+            "Amenazas OT",
+            "Tratamiento",
+            "Motor ML",
+            "Catálogos",
         ], label_visibility="collapsed")
 
         st.markdown("---")
@@ -1295,13 +1294,13 @@ def render_activos():
 
     st.markdown("""
     <div class="info-box">
-    🏭 Los <strong>activos OT</strong> se valoran en 3 dimensiones MAGERIT (Disponibilidad, Confidencialidad, Integridad)
+    Los <strong>activos OT</strong> se valoran en 3 dimensiones MAGERIT (Disponibilidad, Confidencialidad, Integridad)
     + 3 dimensiones OT adicionales (<strong>Safety SIL, Continuidad de Proceso, Integridad Física</strong>).
     El valor se <strong>propaga por dependencias</strong> siguiendo el modelo Purdue: un activo hereda el valor máximo de sus padres.
     </div>
     """, unsafe_allow_html=True)
 
-    tab1, tab2, tab3 = st.tabs(["➕ Nuevo Activo", "📋 Inventario", "🔗 Dependencias"])
+    tab1, tab2, tab3 = st.tabs(["Nuevo Activo", "Inventario", "Dependencias"])
 
     with tab1:
         with st.form("form_activo"):
@@ -1320,7 +1319,7 @@ def render_activos():
             descripcion = st.text_area("Descripción / Identificador", height=60,
                 placeholder="Ej: PLC-HORNO-01 · N/S: XYZ123 · IP: 192.168.10.5")
             es_sis = st.checkbox(
-                "⚠️ Activo SIS (Sistema Instrumentado de Seguridad) — Multiplicador ×1.5",
+                "Activo SIS (Sistema Instrumentado de Seguridad) — Multiplicador ×1.5",
                 value=tipo_info["es_sis_tipico"],
                 help="Se marca automáticamente para tipos con función de seguridad (ZIV, BERTHOLD)"
             )
@@ -1419,7 +1418,7 @@ def render_activos():
                 ot_fisic = st.number_input("Integridad Física (0-5)", 0, 5, 0,
                     help="0=Sin riesgo físico · 3=Posible daño material · 5=Riesgo vital. BERTHOLD colada, sensores EAF, ZIV → 4 o 5")
 
-            submitted = st.form_submit_button("💾 Registrar Activo OT", use_container_width=True)
+            submitted = st.form_submit_button("Registrar Activo OT", use_container_width=True)
             if submitted and nombre:
                 conn = get_conn()
                 conn.execute("""INSERT INTO activos
@@ -1432,7 +1431,7 @@ def render_activos():
                      d15m,d3h,d1d,d1s,d2s,c_ri,c_re,i_dt,i_err,i_man,i_aut,
                      ot_sil,ot_cont,ot_fisic))
                 conn.commit(); conn.close()
-                st.success(f"✅ Activo **{nombre}** registrado.")
+                st.success(f"✅Activo **{nombre}** registrado.")
                 st.rerun()
 
     with tab2:
@@ -1483,7 +1482,7 @@ def render_activos():
         st.markdown('<div class="sec-title">Dependencias entre Activos (Modelo Purdue)</div>', unsafe_allow_html=True)
         st.markdown("""
         <div class="info-box">
-        🔗 <strong>Propagación por dependencias</strong>: el valor de un activo hijo hereda el MAX del valor de sus padres.
+        <strong>Propagación por dependencias</strong>: el valor de un activo hijo hereda el MAX del valor de sus padres.
         Ejemplo: un PLC (N1) que depende de una LAN OT (N2) heredará su valor de disponibilidad si es mayor.
         Fórmula: <code>V_hijo[dim] = MAX(V_propio[dim], MAX(V_padre[dim]))</code>
         </div>
@@ -1539,7 +1538,7 @@ def render_amenazas():
 
     st.markdown("""
     <div class="info-box">
-    ⚠️ <strong>Catálogo de amenazas OT/ICS</strong> basado en ISO27005, ICS-CERT y MITRE ATT&CK for ICS.
+    <strong>Catálogo de amenazas OT/ICS</strong> basado en ISO27005, ICS-CERT y MITRE ATT&CK for ICS.
     Incluye amenazas específicas de acería y ciberataques ICS (Stuxnet, ransomware OT, lateral movement).
     <br><strong>Fórmula MAGERIT-OT</strong>: R = V_activo[dim] × Prob_amenaza[dim] × Multiplicador_OT
     <br>El multiplicador penaliza activos SIS (×1.5) y zonas bajas del Purdue (nivel 0: ×1.4, nivel 1: ×1.25).
@@ -1554,7 +1553,7 @@ def render_amenazas():
         st.warning("No hay activos. Ve a **Activos OT** primero.")
         return
 
-    tab1, tab2 = st.tabs(["📊 Registrar Evaluación", "📋 Evaluaciones Registradas"])
+    tab1, tab2 = st.tabs(["Registrar Evaluación", "Evaluaciones Registradas"])
 
     with tab1:
         col_ev1, col_ev2 = st.columns([1,2])
@@ -1666,7 +1665,7 @@ def render_amenazas():
                 '</div>',
                 unsafe_allow_html=True)
 
-            if st.button("💾 Registrar Evaluación de Riesgo", use_container_width=True):
+            if st.button("Registrar Evaluación de Riesgo", use_container_width=True):
                 conn = get_conn()
                 conn.execute("""INSERT INTO evaluacion_riesgos
                     (activo_id, amenaza_codigo, amenaza_nombre, amenaza_categoria, valor_amenaza,
@@ -1709,7 +1708,7 @@ def render_tratamiento():
 
     st.markdown("""
     <div class="info-box">
-    🛡️ Implementa salvaguardas y calcula el <strong>Riesgo Residual</strong> siguiendo la fórmula MAGERIT:<br>
+    Implementa salvaguardas y calcula el <strong>Riesgo Residual</strong> siguiendo la fórmula MAGERIT:<br>
     <strong>R_objetivo</strong> = R_potencial × ∏(1 − eficacia_i) &nbsp;|&nbsp;
     <strong>R_real</strong> = R_potencial × ∏(1 − eficacia_i × CMM_i)<br>
     Donde CMM: 0→0% · 1→25% · 2→50% · 3→90% · 4→100%
@@ -1729,7 +1728,7 @@ def render_tratamiento():
         st.warning("No hay evaluaciones. Ve a **Amenazas OT** primero.")
         return
 
-    tab1, tab2 = st.tabs(["➕ Nueva Salvaguarda", "📊 Análisis Residual"])
+    tab1, tab2 = st.tabs(["Nueva Salvaguarda", "Análisis Residual"])
 
     with tab1:
         col_t1, col_t2 = st.columns([1,2])
@@ -1793,7 +1792,7 @@ def render_tratamiento():
                 </div>
                 """, unsafe_allow_html=True)
 
-                if st.form_submit_button("💾 Registrar Salvaguarda", use_container_width=True) and nombre_s:
+                if st.form_submit_button("Registrar Salvaguarda", use_container_width=True) and nombre_s:
                     conn = get_conn()
                     conn.execute("""INSERT INTO salvaguardas
                         (evaluacion_id, nombre, capa, estado_cmm, eficacia_objetivo,
@@ -1859,7 +1858,7 @@ def render_motor_ml():
     conn_ml.close()
     st.markdown("""
     <div class="info-box">
-    🧠 <strong>Motor de recomendación propio</strong> (sin IA externa) basado en heurísticas OT ponderadas.<br>
+    <strong>Motor de recomendación propio</strong> (sin IA externa) basado en heurísticas OT ponderadas.<br>
     El score integra: perfil de riesgo MAGERIT-OT, dimensiones críticas (Safety/Continuidad), zona Purdue,
     amenazas registradas y multiplicador OT. Cada puntuación es <strong>completamente trazable y explicable</strong>.
     </div>
@@ -1929,7 +1928,7 @@ def render_motor_ml():
         n_ctrl = st.slider("Nº controles a recomendar", 3, 15, 7)
 
     with col_ml2:
-        if st.button("🧠 Ejecutar Motor ML MAGERIT-OT", use_container_width=True):
+        if st.button("Ejecutar Motor ML MAGERIT-OT", use_container_width=True):
             df_scores = scoring_ml(activo_row, df_am, df_sv)
             top_n = df_scores.head(n_ctrl)
 
@@ -1986,13 +1985,13 @@ def render_motor_ml():
             lbl1 = f"🟢 SL1 — Base ({n1})"
             lbl2 = f"🟡 SL2 — Medio ({n2})" + (" ✅" if sl_obj_tab >= 2 else "")
             lbl3 = f"🔴 SL3 — Avanzado ({n3})" + (" ✅" if sl_obj_tab >= 3 else "")
-            lbl4 = "📉 Riesgo Residual"
-            lbl5 = "🔬 Scoring Completo"
+            lbl4 = "Riesgo Residual"
+            lbl5 = "Scoring Completo"
 
             n4   = len(df_scores[df_scores["sl_min"] == 4])  # always 0 per norm, but shown for completeness
             lbl4_sl = f"🔴 SL4 — Crítico (RE)"
-            lbl5_res = "📉 Riesgo Residual"
-            lbl6_sc  = "🔬 Scoring Completo"
+            lbl5_res = "Riesgo Residual"
+            lbl6_sc  = "Scoring Completo"
             tab_r1, tab_r2, tab_r3, tab_r4_sl, tab_r5, tab_r6 = st.tabs([lbl1, lbl2, lbl3, lbl4_sl, lbl5_res, lbl6_sc])
 
             def render_ctrl_cards(df_tab, sl_level):
@@ -2128,10 +2127,10 @@ def render_motor_ml():
 
 def render_catalogos():
     st.markdown('<div class="sec-title">Catálogos MAGERIT-OT</div>', unsafe_allow_html=True)
-    tab1, tab2, tab3 = st.tabs(["⚠️ Amenazas OT/ICS", "🔒 IEC 62443 SP", "📐 Fórmulas MAGERIT-OT"])
+    tab1, tab2, tab3 = st.tabs(["Amenazas OT/ICS", "IEC 62443 SP", "Fórmulas MAGERIT-OT"])
 
     with tab1:
-        busqueda = st.text_input("🔍 Buscar amenaza", "")
+        busqueda = st.text_input("Buscar amenaza", "")
         cats = sorted(set(a["categoria"] for a in AMENAZAS_OT))
         cat_f = st.selectbox("Filtrar categoría", ["Todas"] + cats)
         amenazas_f = [a for a in AMENAZAS_OT
@@ -2230,17 +2229,17 @@ def main():
     inject_css()
     nav = render_sidebar()
 
-    if nav == "📊 Dashboard":
+    if nav == "Dashboard":
         render_dashboard()
-    elif nav == "🏭 Activos OT":
+    elif nav == "Activos OT":
         render_activos()
-    elif nav == "⚠️ Amenazas OT":
+    elif nav == "Amenazas OT":
         render_amenazas()
-    elif nav == "🛡️ Tratamiento":
+    elif nav == "Tratamiento":
         render_tratamiento()
-    elif nav == "🧠 Motor ML":
+    elif nav == "Motor ML":
         render_motor_ml()
-    elif nav == "📚 Catálogos":
+    elif nav == "Catálogos":
         render_catalogos()
 
 if __name__ == "__main__":
