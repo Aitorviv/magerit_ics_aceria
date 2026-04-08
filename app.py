@@ -53,7 +53,7 @@ def init_db():
         int_err INTEGER DEFAULT 0,
         int_man INTEGER DEFAULT 0,
         int_aut INTEGER DEFAULT 0,
-        -- Dimensiones OT adicionales (innovación TFG)
+        -- Dimensiones OT adicionales
         ot_safety_sil     INTEGER DEFAULT 0,
         ot_continuidad    INTEGER DEFAULT 0,
         ot_integ_fisica   INTEGER DEFAULT 0,
@@ -245,7 +245,7 @@ ZONAS_PURDUE = {
     4: "DMZ Industrial",
 }
 
-# Multiplicador OT por zona Purdue + SIS (INNOVACIÓN MAGERIT-OT)
+# Multiplicador OT por zona Purdue + SIS
 def multiplicador_ot(zona_purdue: int, es_sis: bool) -> float:
     base = {0: 1.4, 1: 1.25, 2: 1.1, 3: 1.0, 4: 1.0}.get(zona_purdue, 1.0)
     return round(base * (1.5 if es_sis else 1.0), 2)
@@ -256,13 +256,11 @@ CMM_LABELS = {0: "0-Sin implantar", 1: "1-Inicial", 2: "2-Definido", 3: "3-Impla
 
 CAPAS_SALVAGUARDA = ["Prevención", "Detección", "Represión", "Corrección", "Recuperación", "Evaluación"]
 # ══════════════════════════════════════════════════════════════
-# SECURITY LEVELS IEC 62443-4-2 — SL mínimo requerido por CR
-# Extraído directamente de las secciones "Niveles de seguridad"
-# del PDF UNE-EN IEC 62443-4-2:2019
+# SECURITY LEVELS IEC 62443-4-2
 # ══════════════════════════════════════════════════════════════
 CR_SL_MINIMO = {
     # CR 1 — IAC: Identificación y Control de Acceso
-    # Fuente: Secciones "Niveles de seguridad" UNE-EN IEC 62443-4-2:2019
+    # Fuente: Secciones "Niveles de seguridad" UNE-EN IEC 62443-4-2
     "CR 1.1": 1,  # SL1-4: obligatorio en todos
     "CR 1.2": 2,  # SL1: No seleccionado
     "CR 1.3": 1,  # SL1-4: obligatorio en todos
@@ -330,7 +328,7 @@ CR_SL_MINIMO = {
 }
 
 # CRs donde SL4 añade Mejoras de Requisitos (RE) adicionales vs SL3
-# Fuente: IEC 62443-4-2:2019 secciones individuales
+# IEC 62443-4-2 secciones individuales
 CR_SL4_RE_EXTRA = {
     "CR 1.7":  "RE(2): Restricciones de vigencia de contraseña para todos los usuarios",
     "CR 2.1":  "RE(4): Control de permisos a nivel de máquina de estados de dispositivo",
@@ -375,7 +373,7 @@ def color_nivel(nivel: str) -> str:
     return {"Crítico": "#ef4444", "Alto": "#f59e0b", "Medio": "#eab308", "Trivial": "#22c55e"}.get(nivel, "#64748b")
 
 # ══════════════════════════════════════════════════════════════
-# CATÁLOGO AMENAZAS OT/ICS (INNOVACIÓN TFG)
+# CATÁLOGO AMENAZAS OT/ICS
 # ══════════════════════════════════════════════════════════════
 AMENAZAS_OT = [
     # ── Amenazas físicas / entorno industrial ──
@@ -411,7 +409,7 @@ AMENAZAS_OT = [
      "disp": [0,0,0,0,0], "conf": [0,0], "integ": [5,3,0,0], "safety": 5, "cont": 4, "fisic": 4},
     {"codigo": "T.05", "nombre": "Corrupción firmware PLC/RTU", "categoria": "Fallos Técnicos", "fuente": "ISO27005",
      "disp": [5,5,5,0,0], "conf": [0,0], "integ": [5,5,5,5], "safety": 4, "cont": 5, "fisic": 3},
-    # ── Ciberataques OT/ICS (INNOVACIÓN) ──
+    # ── Ciberataques OT/ICS ──
     {"codigo": "C.01", "nombre": "Malware ICS tipo Stuxnet (ataque firmware PLC)", "categoria": "Ciberataques ICS", "fuente": "ICS-CERT",
      "disp": [5,5,5,3,0], "conf": [0,4], "integ": [5,5,5,5], "safety": 5, "cont": 5, "fisic": 5},
     {"codigo": "C.02", "nombre": "Ransomware OT (cifrado SCADA/Historian)", "categoria": "Ciberataques ICS", "fuente": "ICS-CERT",
@@ -455,8 +453,7 @@ AMENAZAS_OT = [
 ]
 
 # ══════════════════════════════════════════════════════════════
-# CATÁLOGO IEC 62443-4-2:2019 — Controles CR reales extraídos del PDF
-# Fuente: UNE-EN IEC 62443-4-2:2019 (58 controles Component Requirements)
+# CATÁLOGO IEC 62443-4-2 — Controles
 # ══════════════════════════════════════════════════════════════
 IEC62443_CONTROLES = {
     "CR 1 — IAC: Identificación y Control de Acceso": [
@@ -534,7 +531,7 @@ IEC62443_CONTROLES = {
 }
 
 # ══════════════════════════════════════════════════════════════
-# LÓGICA MAGERIT-OT
+# LÓGICA MAGERIT Y OT
 # ══════════════════════════════════════════════════════════════
 
 def valor_activo_con_dependencias(activo_id: int, conn) -> dict:
@@ -643,7 +640,7 @@ def calcular_residual(evaluacion_id: int, conn) -> dict:
     }
 
 # ══════════════════════════════════════════════════════════════
-# MOTOR ML — SCORING IEC 62443 BASADO EN MAGERIT-OT
+# MOTOR ML — SCORING DE IEC 62443 BASADO EN MAGERIT Y OT
 # ══════════════════════════════════════════════════════════════
 
 def scoring_ml(activo: dict, amenazas_df: pd.DataFrame, salvs_df: pd.DataFrame) -> pd.DataFrame:
@@ -909,7 +906,7 @@ def scoring_ml(activo: dict, amenazas_df: pd.DataFrame, salvs_df: pd.DataFrame) 
             score = min(100, max(0, score))
             prioridad = "ALTA" if score >= 55 else "MEDIA" if score >= 30 else "BAJA"
 
-            # Bonus if SL objective requires this control
+            # Suma si el objetivo de SL requiere este control
             if sl_aplica and sl_min_ctrl >= 2:
                 score = min(100, score + 10)
                 desglose.append(f"+10: SL objetivo ({sl_obj}) requiere este control (SL min {sl_min_ctrl})")
@@ -931,7 +928,7 @@ def scoring_ml(activo: dict, amenazas_df: pd.DataFrame, salvs_df: pd.DataFrame) 
 
 
 # ══════════════════════════════════════════════════════════════
-# CSS — DISEÑO SIDENOR (rojo-negro-acero)
+# CSS — rojo-negro-foto
 # ══════════════════════════════════════════════════════════════
 
 def get_bg_b64():
@@ -1035,7 +1032,7 @@ def inject_css():
     </style>""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════
-# SIDEBAR
+# barra lateral app
 # ══════════════════════════════════════════════════════════════
 
 def render_sidebar():
@@ -1044,16 +1041,16 @@ def render_sidebar():
         <div style='text-align:center; padding:1rem 0;'>
             <div style='font-family:Syne; font-size:1.4rem; font-weight:800; color:#e01010;
                         letter-spacing:2px; text-shadow:0 0 20px rgba(224,16,16,0.5);'>
-                MAGERIT-OT
+                MAGERIT ICS
             </div>
             <div style='font-family:JetBrains Mono; font-size:0.6rem; color:#9a8a8a;
                         letter-spacing:3px; margin-top:2px;'>
-                SIDENOR BASAURI · v2.0
+                PLANTA ACERÍA
             </div>
             <div style='width:60%; height:1px; background:linear-gradient(90deg,transparent,#e01010,transparent);
                         margin:0.7rem auto;'></div>
             <div style='font-family:JetBrains Mono; font-size:0.58rem; color:#6a5a5a; letter-spacing:1px;'>
-                IEC 62443 · NIS2 · MAGERIT v3.0
+                IEC 62443 · NIS2 · MAGERIT
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -1085,16 +1082,6 @@ def render_sidebar():
         """, unsafe_allow_html=True)
 
         st.markdown("---")
-        st.markdown("""
-        <div style='font-family:JetBrains Mono; font-size:0.58rem; color:#4a3a3a; line-height:1.8;'>
-        <b style='color:#6a5a5a;'>FÓRMULAS MAGERIT-OT</b><br>
-        R = V × P × Mult_OT<br>
-        R_obj = R × ∏(1-e_i)<br>
-        R_real = R × ∏(1-e_i·CMM_i)<br>
-        Mult_SIS = ×1.5<br>
-        Purdue 0 = ×1.4 | 1 = ×1.25
-        </div>
-        """, unsafe_allow_html=True)
 
     return nav
 
@@ -1858,9 +1845,9 @@ def render_motor_ml():
     conn_ml.close()
     st.markdown("""
     <div class="info-box">
-    <strong>Motor de recomendación propio</strong> (sin IA externa) basado en heurísticas OT ponderadas.<br>
+    <strong>Motor de recomendación propio</strong> basado en heurísticas OT ponderadas.<br>
     El score integra: perfil de riesgo MAGERIT-OT, dimensiones críticas (Safety/Continuidad), zona Purdue,
-    amenazas registradas y multiplicador OT. Cada puntuación es <strong>completamente trazable y explicable</strong>.
+    amenazas registradas y multiplicador OT. Cada puntuación es <strong>trazable y explicable</strong>.
     </div>
     """, unsafe_allow_html=True)
 
@@ -1988,7 +1975,7 @@ def render_motor_ml():
             lbl4 = "Riesgo Residual"
             lbl5 = "Scoring Completo"
 
-            n4   = len(df_scores[df_scores["sl_min"] == 4])  # always 0 per norm, but shown for completeness
+            n4   = len(df_scores[df_scores["sl_min"] == 4])
             lbl4_sl = f"🔴 SL4 — Crítico (RE)"
             lbl5_res = "Riesgo Residual"
             lbl6_sc  = "Scoring Completo"
@@ -2052,7 +2039,6 @@ def render_motor_ml():
                 render_ctrl_cards(df_sl3, 3)
 
             with tab_r4_sl:
-                # SL4: no new CRs per norm, but 6 CRs add Requirement Enhancements (RE)
                 sl4_c = SL_COLORS[4]
                 st.markdown(
                     '<div style="background:rgba(80,0,0,0.15);border:1px solid #ef444444;border-radius:6px;'
@@ -2092,7 +2078,7 @@ def render_motor_ml():
                     delta=f"-{r_max_v-r_res_v:.2f}", delta_color="inverse")
                 with c_r3: st.metric("Reducción", f"{reduccion}%")
 
-                # Gauge
+                
                 fig_g = go.Figure(go.Indicator(
                     mode="gauge+number+delta",
                     value=r_res_v,
@@ -2178,7 +2164,7 @@ def render_catalogos():
     with tab3:
         st.markdown("""
         <div class="card card-red">
-        <div class="sec-title">Innovación MAGERIT-OT — Adaptación al Entorno Industrial</div>
+        <div class="sec-title">MAGERIT-OT — Adaptación al Entorno Industrial</div>
 
         <div class="formula-box">
         ── VALORACIÓN DE ACTIVOS ──────────────────────────────────<br>
@@ -2196,7 +2182,7 @@ def render_catalogos():
         </div>
 
         <div class="formula-box">
-        ── MULTIPLICADOR OT [INNOVACIÓN TFG] ─────────────────────<br>
+        ── MULTIPLICADOR OT ─────────────────────<br>
         Mult_OT(zona, es_SIS) = Factor_Purdue × (1.5 si SIS else 1.0)<br>
         Nivel 0 (campo): ×1.4 | Nivel 1 (control): ×1.25<br>
         Nivel 2 (supervisión): ×1.1 | Nivel 3+: ×1.0<br>
@@ -2212,7 +2198,7 @@ def render_catalogos():
         </div>
 
         <div class="formula-box">
-        ── RIESGO RESIDUAL (MAGERIT v3.0) ────────────────────────<br>
+        ── RIESGO RESIDUAL ────────────────────────<br>
         R_objetivo = R_pot × ∏(1 − eficacia_i)          [100% implantado]<br>
         R_real     = R_pot × ∏(1 − eficacia_i × CMM_i)  [ponderado madurez]<br>
         CMM: 0→0% | 1→25% | 2→50% | 3→90% | 4→100%

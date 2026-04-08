@@ -7,7 +7,7 @@
 |--------|-------------|
 | Dashboard | Heatmap de riesgos, KPIs, distribución por nivel y zona |
 | Activos OT | Gestión de PLCs, HMIs, SCADA, RTUs con valoración por dimensiones |
-| Amenazas | Catálogo Magerit completo + cálculo automático de riesgo |
+| Amenazas | Listado de amenazas de Magerit + cálculo automático de riesgo |
 | Salvaguardas | Controles de seguridad con eficacia y estado de implementación |
 | Catálogo | listado de amenazas adaptadas a OT |
 
