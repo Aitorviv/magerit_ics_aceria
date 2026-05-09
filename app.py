@@ -1089,17 +1089,143 @@ def render_sidebar():
 # MÓDULO 1 — DASHBOARD
 # ══════════════════════════════════════════════════════════════
 
+
+def calcular_completitud(df_act, df_ev, conn):
+    # Todos los valores escalares con int() seguro via scalar()
+    def sc(x):
+        """Convierte cualquier valor pandas/numpy a int Python puro."""
+        try:
+            return int(x)
+        except Exception:
+            try:
+                return int(x.iloc[0]) if hasattr(x, 'iloc') else int(x.item())
+            except Exception:
+                return 0
+
+    n_act = sc(len(df_act))
+    if n_act == 0:
+        return {"global":0,"m1":0,"m2":0,"m3":0,"m4":0,
+                "n_act":0,"n_valorados":0,"n_con_eval":0,
+                "n_criticos_altos":0,"n_con_salvaguarda":0,"n_evals":0,"n_con_cmm":0}
+
+    dim_cols = ["disp_15m","disp_3h","disp_1d","disp_1s","disp_2s",
+                "conf_ri","conf_re","int_dt","int_err","int_man","int_aut",
+                "ot_safety_sil","ot_continuidad","ot_integ_fisica"]
+    valorados = 0
+    for _, r in df_act.iterrows():
+        vals = [sc(r[d]) for d in dim_cols if d in df_act.columns]
+        if sum(vals) > 0:
+            valorados += 1
+    m1 = int(round(valorados / n_act * 100))
+
+    # M2: activos con evaluación — usar SQL directo para evitar problemas con Series
+    try:
+        n_con_eval = conn.execute(
+            "SELECT COUNT(DISTINCT activo_id) FROM evaluacion_riesgos"
+        ).fetchone()[0]
+        n_con_eval = sc(n_con_eval)
+    except Exception:
+        n_con_eval = 0
+    m2 = int(round(n_con_eval / n_act * 100))
+
+    # M3: riesgos críticos/altos con salvaguarda
+    try:
+        n_ca = sc(conn.execute(
+            "SELECT COUNT(*) FROM evaluacion_riesgos WHERE nivel_riesgo IN ('Crítico','Alto')"
+        ).fetchone()[0])
+        n_con_salv = sc(conn.execute("""
+            SELECT COUNT(DISTINCT e.id) FROM evaluacion_riesgos e
+            JOIN salvaguardas s ON s.evaluacion_id = e.id
+            WHERE e.nivel_riesgo IN ('Crítico','Alto')
+        """).fetchone()[0])
+        m3 = int(round(n_con_salv / n_ca * 100)) if n_ca > 0 else 100
+    except Exception:
+        n_ca = 0; n_con_salv = 0; m3 = 0
+
+    # M4: evaluaciones con CMM >= 2
+    try:
+        n_evals = sc(conn.execute("SELECT COUNT(*) FROM evaluacion_riesgos").fetchone()[0])
+        n_con_cmm = sc(conn.execute("""
+            SELECT COUNT(DISTINCT evaluacion_id) FROM salvaguardas WHERE estado_cmm >= 2
+        """).fetchone()[0])
+        m4 = int(round(n_con_cmm / n_evals * 100)) if n_evals > 0 else 0
+    except Exception:
+        n_evals = 0; n_con_cmm = 0; m4 = 0
+
+    g = int(round(m1*0.30 + m2*0.35 + m3*0.25 + m4*0.10))
+    return {"global":g,"m1":m1,"m2":m2,"m3":m3,"m4":m4,
+            "n_act":n_act,"n_valorados":valorados,"n_con_eval":n_con_eval,
+            "n_criticos_altos":n_ca,"n_con_salvaguarda":n_con_salv,
+            "n_evals":n_evals,"n_con_cmm":n_con_cmm}
+
+
+def render_completitud(comp):
+    g = int(comp["global"])
+    g_col = "#22c55e" if g>=75 else "#f59e0b" if g>=50 else "#ef4444" if g>=25 else "#7f1d1d"
+    estado = ("Auditoría avanzada" if g>=75 else "Auditoría en progreso"
+              if g>=50 else "Auditoría iniciada" if g>=25 else "Auditoría pendiente")
+
+    def barra(pct, color):
+        return ('<div style="background:#1a0000;border-radius:4px;height:6px;overflow:hidden;margin-top:4px;">'
+                f'<div style="width:{pct}%;height:100%;background:{color};border-radius:4px;"></div></div>')
+
+    def mini(label, pct, detalle):
+        c = "#22c55e" if pct>=75 else "#f59e0b" if pct>=40 else "#ef4444"
+        return ('<div style="flex:1;min-width:140px;background:rgba(10,0,0,0.6);border:1px solid #220000;'
+                'border-radius:8px;padding:0.7rem 0.9rem;">'
+                f'<div style="font-size:0.6rem;color:#9a8a8a;letter-spacing:1px;">{label}</div>'
+                f'<div style="font-size:1.3rem;font-weight:800;color:{c};font-family:Syne,sans-serif;">{pct}%</div>'
+                f'<div style="font-size:0.6rem;color:#6a5a5a;">{detalle}</div>'
+                + barra(pct, c) + '</div>')
+
+    html = (
+        '<div style="background:rgba(10,0,0,0.85);border:1px solid rgba(200,0,0,0.2);'
+        'border-radius:12px;padding:1.2rem 1.4rem;margin-bottom:1rem;">'
+        '<div style="display:flex;justify-content:space-between;align-items:center;'
+        'flex-wrap:wrap;gap:0.8rem;margin-bottom:1rem;">'
+        '<div>'
+        '<div style="font-family:Syne,sans-serif;font-size:0.65rem;color:#e01010;'
+        'letter-spacing:3px;text-transform:uppercase;font-weight:700;">Completitud de Auditoría MAGERIT-OT</div>'
+        f'<div style="font-size:0.7rem;color:#9a8a8a;margin-top:2px;">{estado} — NIS2 Art. 21</div>'
+        '</div>'
+        f'<div style="text-align:center;"><div style="font-size:2.8rem;font-weight:900;color:{g_col};'
+        f'font-family:Syne,sans-serif;line-height:1;">{g}%</div>'
+        '<div style="font-size:0.6rem;color:#9a8a8a;">ÍNDICE GLOBAL</div></div>'
+        '</div>'
+        f'<div style="background:#1a0000;border-radius:6px;height:10px;overflow:hidden;margin-bottom:1rem;">'
+        f'<div style="width:{g}%;height:100%;border-radius:6px;'
+        f'background:linear-gradient(90deg,{g_col}88,{g_col});"></div></div>'
+        '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;">'
+        + mini("1. VALORACIÓN ACTIVOS", comp["m1"],
+               f"{comp['n_valorados']}/{comp['n_act']} activos valorados")
+        + mini("2. COBERTURA AMENAZAS", comp["m2"],
+               f"{comp['n_con_eval']}/{comp['n_act']} activos evaluados")
+        + mini("3. TRATAMIENTO RIESGOS", comp["m3"],
+               f"{comp['n_con_salvaguarda']}/{comp['n_criticos_altos']} críticos/altos tratados")
+        + mini("4. MADUREZ CMM", comp["m4"],
+               f"{comp['n_con_cmm']}/{comp['n_evals']} evaluaciones CMM≥2")
+        + '</div>'
+        '<div style="margin-top:0.8rem;font-size:0.6rem;color:#4a3a3a;font-style:italic;">'
+        'Ponderación: Valoración ×30% · Cobertura amenazas ×35% · Tratamiento riesgos ×25% · Madurez CMM ×10%'
+        '</div></div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
+
 def render_dashboard():
     st.markdown('<div class="sec-title">Dashboard — Visión General de Riesgos OT</div>', unsafe_allow_html=True)
 
     conn = get_conn()
     df_ev = pd.read_sql("""
         SELECT e.*, a.nombre as activo_nombre, a.tipo, a.seccion_aceria,
-               a.zona_purdue, a.es_sis
+               a.zona_purdue, a.es_sis, a.id as activo_id
         FROM evaluacion_riesgos e
         JOIN activos a ON e.activo_id = a.id
     """, conn)
     df_act = pd.read_sql("SELECT * FROM activos", conn)
+
+    # ── Indicador de completitud ──────────────────────────────────
+    comp = calcular_completitud(df_act, df_ev, conn)
+    render_completitud(comp)
     conn.close()
 
     # KPIs
