@@ -1360,6 +1360,151 @@ def render_dashboard():
         )
         st.plotly_chart(fig_dim, use_container_width=True)
 
+    # ── Histórico de evolución del riesgo ───────────────────────
+    st.markdown('<div class="sec-title">Histórico — Evolución del Riesgo por Activo</div>', unsafe_allow_html=True)
+
+    if len(df_ev) > 0 and "created_at" in df_ev.columns:
+        conn2 = get_conn()
+        df_hist = pd.read_sql("""
+            SELECT e.created_at, e.riesgo_potencial, e.nivel_riesgo,
+                   e.amenaza_nombre, a.nombre as activo_nombre, a.seccion_aceria
+            FROM evaluacion_riesgos e
+            JOIN activos a ON e.activo_id = a.id
+            ORDER BY e.created_at ASC
+        """, conn2)
+        conn2.close()
+
+        # Selector de activo para el histórico
+        activos_hist = ["Todos"] + sorted(df_hist["activo_nombre"].unique().tolist())
+        col_h1, col_h2 = st.columns([2, 1])
+        with col_h1:
+            activo_hist_sel = st.selectbox("Filtrar por activo", activos_hist,
+                key="hist_activo_sel")
+        with col_h2:
+            vista_hist = st.selectbox("Vista", ["Evolución temporal", "Por sección"],
+                key="hist_vista")
+
+        if activo_hist_sel != "Todos":
+            df_hist = df_hist[df_hist["activo_nombre"] == activo_hist_sel]
+
+        if len(df_hist) > 0:
+            # Parsear fechas
+            df_hist["fecha"] = pd.to_datetime(df_hist["created_at"], errors="coerce")
+            df_hist = df_hist.dropna(subset=["fecha"])
+
+            if vista_hist == "Evolución temporal":
+                # Gráfica de línea — evolución del riesgo potencial a lo largo del tiempo
+                fig_hist = go.Figure()
+
+                if activo_hist_sel == "Todos":
+                    # Agrupar por fecha (día) y mostrar riesgo máximo
+                    df_grouped = df_hist.copy()
+                    df_grouped["dia"] = df_grouped["fecha"].dt.date
+                    df_grouped = df_grouped.groupby("dia")["riesgo_potencial"].max().reset_index()
+                    fig_hist.add_trace(go.Scatter(
+                        x=df_grouped["dia"], y=df_grouped["riesgo_potencial"],
+                        mode="lines+markers",
+                        line=dict(color="#e01010", width=2),
+                        marker=dict(size=7, color="#e01010"),
+                        name="Riesgo máximo diario",
+                        hovertemplate="Fecha: %{x}<br>Riesgo máx: %{y:.1f}<extra></extra>"
+                    ))
+                else:
+                    # Mostrar cada evaluación del activo seleccionado
+                    for amenaza in df_hist["amenaza_nombre"].unique():
+                        df_amenaza = df_hist[df_hist["amenaza_nombre"] == amenaza].sort_values("fecha")
+                        if len(df_amenaza) > 0:
+                            fig_hist.add_trace(go.Scatter(
+                                x=df_amenaza["fecha"], y=df_amenaza["riesgo_potencial"],
+                                mode="lines+markers", name=amenaza[:40],
+                                marker=dict(size=7),
+                                hovertemplate="<b>" + amenaza[:40] + "</b><br>%{x}<br>Riesgo: %{y:.1f}<extra></extra>"
+                            ))
+
+                # Líneas de umbral
+                fig_hist.add_hline(y=15, line_dash="dash", line_color="#ef4444",
+                    annotation_text="Crítico ≥15", annotation_position="right",
+                    annotation_font=dict(size=9, color="#ef4444"))
+                fig_hist.add_hline(y=4, line_dash="dash", line_color="#f59e0b",
+                    annotation_text="Alto ≥4", annotation_position="right",
+                    annotation_font=dict(size=9, color="#f59e0b"))
+
+                fig_hist.update_layout(
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(family="JetBrains Mono", color="#9a8a8a", size=10),
+                    height=280, margin=dict(l=5, r=80, t=10, b=40),
+                    xaxis=dict(gridcolor="#220000", title="Fecha"),
+                    yaxis=dict(gridcolor="#220000", title="Riesgo MAGERIT-OT", range=[0, 26]),
+                    legend=dict(orientation="h", y=-0.25, font=dict(size=9)),
+                )
+                st.plotly_chart(fig_hist, use_container_width=True)
+
+                # Resumen estadístico
+                r_ini = float(df_hist.sort_values("fecha")["riesgo_potencial"].iloc[0])
+                r_act = float(df_hist.sort_values("fecha")["riesgo_potencial"].iloc[-1])
+                tendencia = r_act - r_ini
+                tend_col = "#22c55e" if tendencia < 0 else "#ef4444" if tendencia > 0 else "#9a8a8a"
+                tend_icon = "↓" if tendencia < 0 else "↑" if tendencia > 0 else "→"
+                st.markdown(
+                    '<div style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:0.3rem;">'
+                    '<div style="background:rgba(10,0,0,0.6);border:1px solid #220000;border-radius:6px;'
+                    'padding:0.5rem 0.9rem;flex:1;min-width:120px;text-align:center;">'
+                    f'<div style="font-size:1.1rem;font-weight:800;color:#e01010;font-family:Syne,sans-serif;">{r_ini:.1f}</div>'
+                    '<div style="font-size:0.6rem;color:#9a8a8a;">RIESGO INICIAL</div></div>'
+                    '<div style="background:rgba(10,0,0,0.6);border:1px solid #220000;border-radius:6px;'
+                    'padding:0.5rem 0.9rem;flex:1;min-width:120px;text-align:center;">'
+                    f'<div style="font-size:1.1rem;font-weight:800;color:#f0eded;font-family:Syne,sans-serif;">{r_act:.1f}</div>'
+                    '<div style="font-size:0.6rem;color:#9a8a8a;">RIESGO ACTUAL</div></div>'
+                    '<div style="background:rgba(10,0,0,0.6);border:1px solid #220000;border-radius:6px;'
+                    'padding:0.5rem 0.9rem;flex:1;min-width:120px;text-align:center;">'
+                    f'<div style="font-size:1.1rem;font-weight:800;color:{tend_col};font-family:Syne,sans-serif;">{tend_icon} {abs(tendencia):.1f}</div>'
+                    '<div style="font-size:0.6rem;color:#9a8a8a;">VARIACIÓN</div></div>'
+                    '<div style="background:rgba(10,0,0,0.6);border:1px solid #220000;border-radius:6px;'
+                    'padding:0.5rem 0.9rem;flex:1;min-width:120px;text-align:center;">'
+                    f'<div style="font-size:1.1rem;font-weight:800;color:#9a8a8a;font-family:Syne,sans-serif;">{len(df_hist)}</div>'
+                    '<div style="font-size:0.6rem;color:#9a8a8a;">EVALUACIONES</div></div>'
+                    '</div>',
+                    unsafe_allow_html=True
+                )
+
+            else:  # Por sección
+                conn3 = get_conn()
+                df_sec_hist = pd.read_sql("""
+                    SELECT a.seccion_aceria,
+                           MAX(e.created_at) as ultima_eval,
+                           MAX(e.riesgo_potencial) as riesgo_max,
+                           COUNT(e.id) as n_evaluaciones
+                    FROM evaluacion_riesgos e
+                    JOIN activos a ON e.activo_id = a.id
+                    GROUP BY a.seccion_aceria
+                    ORDER BY riesgo_max DESC
+                """, conn3)
+                conn3.close()
+
+                for _, rs in df_sec_hist.iterrows():
+                    r = float(rs["riesgo_max"])
+                    niv = "Crítico" if r>=15 else "Alto" if r>=4 else "Medio" if r>=3 else "Trivial"
+                    c_s = color_nivel(niv)
+                    fecha_str = str(rs["ultima_eval"])[:10] if rs["ultima_eval"] else "—"
+                    st.markdown(
+                        '<div style="display:flex;justify-content:space-between;align-items:center;'
+                        'background:rgba(10,0,0,0.6);border:1px solid #220000;border-left:3px solid ' + c_s + ';'
+                        'border-radius:6px;padding:0.4rem 0.9rem;margin-bottom:4px;flex-wrap:wrap;gap:0.5rem;">'
+                        '<div>'
+                        '<span style="font-size:0.8rem;font-weight:700;color:#f0eded;">' + str(rs["seccion_aceria"]) + '</span>'
+                        '<span style="font-size:0.62rem;color:#9a8a8a;margin-left:8px;">Última eval: ' + fecha_str + '</span>'
+                        '</div>'
+                        '<div style="display:flex;gap:0.8rem;align-items:center;">'
+                        '<span style="font-size:0.62rem;color:#9a8a8a;">' + str(int(rs["n_evaluaciones"])) + ' evaluaciones</span>'
+                        '<span style="font-family:Syne,sans-serif;font-size:1rem;font-weight:800;color:' + c_s + ';">' + f"{r:.1f}" + '</span>'
+                        '</div></div>',
+                        unsafe_allow_html=True
+                    )
+        else:
+            st.info("No hay suficientes datos históricos para mostrar la evolución.")
+    else:
+        st.info("Registra evaluaciones de amenazas para ver el histórico de riesgo.")
+
     # Top amenazas
     st.markdown('<div class="sec-title">Top 10 — Mayor Riesgo Potencial (MAGERIT-OT)</div>', unsafe_allow_html=True)
     top = df_ev.sort_values("riesgo_potencial", ascending=False).head(10)
