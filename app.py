@@ -8,8 +8,15 @@ import pandas as pd
 import sqlite3
 import plotly.graph_objects as go
 import plotly.express as px
-import base64, os, math
+import base64, os, math, io
 from datetime import datetime
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.units import cm
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table,
+    TableStyle, HRFlowable, PageBreak, KeepTogether)
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 st.set_page_config(
     page_title="MAGERIT OT/ICS",
@@ -105,6 +112,18 @@ def init_db():
         afecta_safety INTEGER DEFAULT 0,
         notas TEXT,
         FOREIGN KEY(evaluacion_id) REFERENCES evaluacion_riesgos(id)
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS evidencias (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        activo_id INTEGER NOT NULL,
+        nombre_fichero TEXT NOT NULL,
+        tipo_fichero TEXT,
+        descripcion TEXT,
+        datos BLOB NOT NULL,
+        tamanio INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(activo_id) REFERENCES activos(id)
     )""")
 
     conn.commit()
@@ -1090,6 +1109,374 @@ def render_sidebar():
 # ══════════════════════════════════════════════════════════════
 
 
+
+# ══════════════════════════════════════════════════════════════
+# GENERADOR DE INFORME PDF — MAGERIT-OT
+# ══════════════════════════════════════════════════════════════
+
+def generar_informe_pdf(conn) -> bytes:
+    """
+    Genera un informe ejecutivo PDF de la auditoría MAGERIT-OT.
+    Retorna bytes del PDF listos para descarga.
+    """
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        leftMargin=1.8*cm, rightMargin=1.8*cm,
+        topMargin=2*cm, bottomMargin=2*cm,
+        title="Informe Auditoría MAGERIT-OT — Sidenor Basauri",
+        author="MAGERIT-OT v2.0"
+    )
+
+    # ── Estilos ───────────────────────────────────────────────
+    C_ROJO    = colors.HexColor("#C0392B")
+    C_ROJO_L  = colors.HexColor("#FADBD8")
+    C_GRIS    = colors.HexColor("#2C3E50")
+    C_GRIS_L  = colors.HexColor("#F2F3F4")
+    C_GRIS_M  = colors.HexColor("#5D6D7E")
+    C_NEGRO   = colors.HexColor("#1a0000")
+    C_VERDE   = colors.HexColor("#1E8449")
+    C_NARANJA = colors.HexColor("#D68910")
+    C_BLANCO  = colors.white
+
+    def color_nivel_pdf(nivel):
+        return {"Crítico": colors.HexColor("#C0392B"),
+                "Alto":    colors.HexColor("#D68910"),
+                "Medio":   colors.HexColor("#B7950B"),
+                "Trivial": colors.HexColor("#1E8449")}.get(nivel, C_GRIS_M)
+
+    st_title = ParagraphStyle("titulo", fontName="Helvetica-Bold",
+        fontSize=22, textColor=C_ROJO, spaceAfter=6, leading=26)
+    st_sub = ParagraphStyle("subtitulo", fontName="Helvetica",
+        fontSize=11, textColor=C_GRIS_M, spaceAfter=4)
+    st_h1 = ParagraphStyle("h1", fontName="Helvetica-Bold",
+        fontSize=13, textColor=C_ROJO, spaceBefore=16, spaceAfter=6,
+        borderPad=4, leading=16)
+    st_h2 = ParagraphStyle("h2", fontName="Helvetica-Bold",
+        fontSize=10, textColor=C_GRIS, spaceBefore=10, spaceAfter=4)
+    st_body = ParagraphStyle("body", fontName="Helvetica",
+        fontSize=9, textColor=C_GRIS, spaceAfter=4, leading=13)
+    st_small = ParagraphStyle("small", fontName="Helvetica",
+        fontSize=7.5, textColor=C_GRIS_M, spaceAfter=2, leading=10)
+    st_center = ParagraphStyle("center", fontName="Helvetica",
+        fontSize=9, textColor=C_GRIS, alignment=TA_CENTER)
+    st_bold = ParagraphStyle("bold", fontName="Helvetica-Bold",
+        fontSize=9, textColor=C_GRIS, spaceAfter=2)
+
+    # ── Datos ─────────────────────────────────────────────────
+    df_act  = pd.read_sql("SELECT * FROM activos", conn)
+    df_ev   = pd.read_sql("""
+        SELECT e.*, a.nombre as activo_nombre, a.tipo, a.seccion_aceria,
+               a.zona_purdue, a.es_sis, a.id as activo_id
+        FROM evaluacion_riesgos e JOIN activos a ON e.activo_id=a.id
+        ORDER BY e.riesgo_potencial DESC
+    """, conn)
+    df_salvs = pd.read_sql("""
+        SELECT s.*, e.amenaza_nombre, e.nivel_riesgo, a.nombre as activo_nombre
+        FROM salvaguardas s
+        JOIN evaluacion_riesgos e ON s.evaluacion_id=e.id
+        JOIN activos a ON e.activo_id=a.id
+    """, conn)
+    comp = calcular_completitud(df_act, df_ev, conn)
+    fecha = datetime.now().strftime("%d/%m/%Y %H:%M")
+
+    story = []
+
+    # ── PORTADA ───────────────────────────────────────────────
+    story.append(Spacer(1, 1.5*cm))
+    story.append(Paragraph("INFORME DE AUDITORÍA", ParagraphStyle("port1",
+        fontName="Helvetica", fontSize=10, textColor=C_GRIS_M,
+        alignment=TA_CENTER, spaceAfter=4)))
+    story.append(Paragraph("MAGERIT-OT v2.0", ParagraphStyle("port2",
+        fontName="Helvetica-Bold", fontSize=28, textColor=C_ROJO,
+        alignment=TA_CENTER, spaceAfter=6)))
+    story.append(Paragraph("Análisis de Riesgos de Ciberseguridad Industrial",
+        ParagraphStyle("port3", fontName="Helvetica", fontSize=13,
+        textColor=C_GRIS, alignment=TA_CENTER, spaceAfter=4)))
+    story.append(Paragraph("Sidenor Basauri — Acería Eléctrica",
+        ParagraphStyle("port4", fontName="Helvetica-Bold", fontSize=11,
+        textColor=C_GRIS_M, alignment=TA_CENTER, spaceAfter=2)))
+    story.append(Spacer(1, 0.4*cm))
+    story.append(HRFlowable(width="100%", thickness=2, color=C_ROJO))
+    story.append(Spacer(1, 0.4*cm))
+    story.append(Paragraph(f"Fecha de generación: {fecha}",
+        ParagraphStyle("port5", fontName="Helvetica", fontSize=9,
+        textColor=C_GRIS_M, alignment=TA_CENTER)))
+    story.append(Paragraph("Documento de uso interno — Confidencial",
+        ParagraphStyle("port6", fontName="Helvetica-Oblique", fontSize=8,
+        textColor=C_GRIS_M, alignment=TA_CENTER)))
+    story.append(Spacer(1, 1*cm))
+
+    # Tabla resumen portada
+    n_crit = len(df_ev[df_ev["nivel_riesgo"]=="Crítico"]) if len(df_ev)>0 else 0
+    n_alto = len(df_ev[df_ev["nivel_riesgo"]=="Alto"]) if len(df_ev)>0 else 0
+    r_max  = float(df_ev["riesgo_potencial"].max()) if len(df_ev)>0 else 0
+
+    tabla_port = Table([
+        [Paragraph("Activos OT", st_center), Paragraph("Evaluaciones", st_center),
+         Paragraph("Riesgos Críticos", st_center), Paragraph("Riesgos Altos", st_center),
+         Paragraph("Completitud", st_center)],
+        [Paragraph(str(len(df_act)), ParagraphStyle("kpi", fontName="Helvetica-Bold",
+            fontSize=20, textColor=C_GRIS, alignment=TA_CENTER)),
+         Paragraph(str(len(df_ev)), ParagraphStyle("kpi", fontName="Helvetica-Bold",
+            fontSize=20, textColor=C_GRIS, alignment=TA_CENTER)),
+         Paragraph(str(n_crit), ParagraphStyle("kpi", fontName="Helvetica-Bold",
+            fontSize=20, textColor=C_ROJO, alignment=TA_CENTER)),
+         Paragraph(str(n_alto), ParagraphStyle("kpi", fontName="Helvetica-Bold",
+            fontSize=20, textColor=C_NARANJA, alignment=TA_CENTER)),
+         Paragraph(f"{comp['global']}%", ParagraphStyle("kpi", fontName="Helvetica-Bold",
+            fontSize=20, textColor=C_VERDE if comp["global"]>=75 else C_NARANJA if comp["global"]>=50 else C_ROJO,
+            alignment=TA_CENTER))],
+    ], colWidths=[3.3*cm]*5)
+    tabla_port.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), C_GRIS_L),
+        ("BACKGROUND", (0,1), (-1,1), colors.white),
+        ("BOX", (0,0), (-1,-1), 0.5, C_GRIS_M),
+        ("INNERGRID", (0,0), (-1,-1), 0.3, colors.HexColor("#D5D8DC")),
+        ("ROWBACKGROUNDS", (0,1), (-1,1), [colors.white]),
+        ("TOPPADDING", (0,0), (-1,-1), 8),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 8),
+    ]))
+    story.append(tabla_port)
+    story.append(PageBreak())
+
+    # ── 1. COMPLETITUD DE AUDITORÍA ───────────────────────────
+    story.append(Paragraph("1. Completitud de la Auditoría MAGERIT-OT", st_h1))
+    story.append(HRFlowable(width="100%", thickness=1, color=C_ROJO))
+    story.append(Spacer(1, 0.2*cm))
+    story.append(Paragraph(
+        f"La auditoría presenta un índice de completitud global del <b>{comp['global']}%</b>, "
+        f"calculado como la media ponderada de cuatro métricas del proceso MAGERIT-OT. "
+        f"Este índice refleja el grado de avance en la identificación, evaluación y tratamiento "
+        f"de riesgos de ciberseguridad en las instalaciones OT de Sidenor Basauri.", st_body))
+    story.append(Spacer(1, 0.2*cm))
+
+    tabla_comp = Table([
+        ["Métrica", "Resultado", "Detalle", "Peso"],
+        ["1. Valoración de Activos",
+         f"{comp['m1']}%",
+         f"{comp['n_valorados']} de {comp['n_act']} activos valorados",
+         "30%"],
+        ["2. Cobertura de Amenazas",
+         f"{comp['m2']}%",
+         f"{comp['n_con_eval']} de {comp['n_act']} activos evaluados",
+         "35%"],
+        ["3. Tratamiento de Riesgos",
+         f"{comp['m3']}%",
+         f"{comp['n_con_salvaguarda']} de {comp['n_criticos_altos']} criticos/altos tratados",
+         "25%"],
+        ["4. Madurez CMM",
+         f"{comp['m4']}%",
+         f"{comp['n_con_cmm']} de {comp['n_evals']} evaluaciones con CMM>=2",
+         "10%"],
+        ["INDICE GLOBAL", f"{comp['global']}%", "", ""],
+    ], colWidths=[6*cm, 2*cm, 7*cm, 1.5*cm])
+    tabla_comp.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), C_GRIS),
+        ("TEXTCOLOR", (0,0), (-1,0), C_BLANCO),
+        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE", (0,0), (-1,-1), 8.5),
+        ("BACKGROUND", (0,-1), (-1,-1), C_ROJO_L),
+        ("FONTNAME", (0,-1), (-1,-1), "Helvetica-Bold"),
+        ("TEXTCOLOR", (0,-1), (-1,-1), C_ROJO),
+        ("ROWBACKGROUNDS", (0,1), (-1,-2), [colors.white, C_GRIS_L]),
+        ("BOX", (0,0), (-1,-1), 0.5, C_GRIS_M),
+        ("INNERGRID", (0,0), (-1,-1), 0.3, colors.HexColor("#D5D8DC")),
+        ("TOPPADDING", (0,0), (-1,-1), 5),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+        ("LEFTPADDING", (0,0), (-1,-1), 6),
+    ]))
+    story.append(tabla_comp)
+
+    # ── 2. INVENTARIO DE ACTIVOS ──────────────────────────────
+    story.append(Spacer(1, 0.5*cm))
+    story.append(Paragraph("2. Inventario de Activos OT", st_h1))
+    story.append(HRFlowable(width="100%", thickness=1, color=C_ROJO))
+    story.append(Spacer(1, 0.2*cm))
+
+    if len(df_act) > 0:
+        story.append(Paragraph(
+            f"Se han inventariado <b>{len(df_act)} activos OT</b> distribuidos en las "
+            f"{df_act['seccion_aceria'].nunique()} ubicaciones de la planta.", st_body))
+        story.append(Spacer(1, 0.2*cm))
+
+        # Activos por ubicación
+        por_sec = df_act.groupby("seccion_aceria").size().reset_index(name="n").sort_values("n", ascending=False)
+        filas_sec = [["Ubicación", "N. Activos", "Tipos principales"]]
+        for _, rs in por_sec.iterrows():
+            tipos = df_act[df_act["seccion_aceria"]==rs["seccion_aceria"]]["tipo"].value_counts().head(3)
+            tipos_str = ", ".join([f"{t}({n})" for t,n in tipos.items()])
+            filas_sec.append([str(rs["seccion_aceria"]), str(rs["n"]), tipos_str])
+        t_sec = Table(filas_sec, colWidths=[5*cm, 2.5*cm, 9*cm])
+        t_sec.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), C_GRIS),
+            ("TEXTCOLOR", (0,0), (-1,0), C_BLANCO),
+            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+            ("FONTSIZE", (0,0), (-1,-1), 8),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, C_GRIS_L]),
+            ("BOX", (0,0), (-1,-1), 0.5, C_GRIS_M),
+            ("INNERGRID", (0,0), (-1,-1), 0.3, colors.HexColor("#D5D8DC")),
+            ("TOPPADDING", (0,0), (-1,-1), 4),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+            ("LEFTPADDING", (0,0), (-1,-1), 5),
+        ]))
+        story.append(t_sec)
+
+    # ── 3. EVALUACIÓN DE RIESGOS ──────────────────────────────
+    story.append(Spacer(1, 0.5*cm))
+    story.append(Paragraph("3. Evaluación de Riesgos — Resultados", st_h1))
+    story.append(HRFlowable(width="100%", thickness=1, color=C_ROJO))
+    story.append(Spacer(1, 0.2*cm))
+
+    if len(df_ev) > 0:
+        dist = df_ev["nivel_riesgo"].value_counts()
+        dist_str = " | ".join([f"{niv}: {n}" for niv, n in dist.items()])
+        story.append(Paragraph(
+            f"Se han registrado <b>{len(df_ev)} evaluaciones de riesgo</b>. "
+            f"Distribución por nivel: {dist_str}. "
+            f"Riesgo potencial máximo detectado: <b>{r_max:.1f}</b> (escala MAGERIT 0-25).", st_body))
+        story.append(Spacer(1, 0.2*cm))
+
+        # Top riesgos
+        story.append(Paragraph("Riesgos de mayor criticidad (Top 15)", st_h2))
+        top15 = df_ev.head(15)
+        filas_ev = [["Activo", "Amenaza", "Secc.", "R.Pot.", "Nivel", "Mult.OT"]]
+        for _, r in top15.iterrows():
+            filas_ev.append([
+                str(r["activo_nombre"])[:22],
+                str(r["amenaza_nombre"])[:35],
+                str(r["seccion_aceria"])[:12],
+                f"{r['riesgo_potencial']:.1f}",
+                str(r["nivel_riesgo"]),
+                f"x{r['multiplicador_ot']:.2f}",
+            ])
+        t_ev = Table(filas_ev, colWidths=[3.5*cm, 5.5*cm, 2*cm, 1.5*cm, 1.8*cm, 1.5*cm])
+        row_colors = []
+        for i, (_, r) in enumerate(top15.iterrows(), 1):
+            c_niv = color_nivel_pdf(r["nivel_riesgo"])
+            row_colors.append(("TEXTCOLOR", (4,i), (4,i), c_niv))
+            row_colors.append(("FONTNAME", (4,i), (4,i), "Helvetica-Bold"))
+        t_ev.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), C_GRIS),
+            ("TEXTCOLOR", (0,0), (-1,0), C_BLANCO),
+            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+            ("FONTSIZE", (0,0), (-1,-1), 7.5),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, C_GRIS_L]),
+            ("BOX", (0,0), (-1,-1), 0.5, C_GRIS_M),
+            ("INNERGRID", (0,0), (-1,-1), 0.3, colors.HexColor("#D5D8DC")),
+            ("TOPPADDING", (0,0), (-1,-1), 4),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+            ("LEFTPADDING", (0,0), (-1,-1), 4),
+        ] + row_colors))
+        story.append(t_ev)
+
+        # Riesgo por sección
+        story.append(Spacer(1, 0.3*cm))
+        story.append(Paragraph("Riesgo máximo por ubicación", st_h2))
+        sec_risk = df_ev.groupby("seccion_aceria")["riesgo_potencial"].max().sort_values(ascending=False).reset_index()
+        filas_sr = [["Ubicación", "Riesgo Máximo", "Nivel"]]
+        for _, rs in sec_risk.iterrows():
+            niv = "Crítico" if rs["riesgo_potencial"]>=15 else "Alto" if rs["riesgo_potencial"]>=4 else "Medio" if rs["riesgo_potencial"]>=3 else "Trivial"
+            filas_sr.append([str(rs["seccion_aceria"]), f"{rs['riesgo_potencial']:.1f}", niv])
+        t_sr = Table(filas_sr, colWidths=[7*cm, 4*cm, 5.5*cm])
+        niv_colors_sr = []
+        for i, (_, rs) in enumerate(sec_risk.iterrows(), 1):
+            niv = "Crítico" if rs["riesgo_potencial"]>=15 else "Alto" if rs["riesgo_potencial"]>=4 else "Medio" if rs["riesgo_potencial"]>=3 else "Trivial"
+            c_niv = color_nivel_pdf(niv)
+            niv_colors_sr.append(("TEXTCOLOR", (2,i), (2,i), c_niv))
+            niv_colors_sr.append(("FONTNAME", (2,i), (2,i), "Helvetica-Bold"))
+        t_sr.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), C_GRIS),
+            ("TEXTCOLOR", (0,0), (-1,0), C_BLANCO),
+            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+            ("FONTSIZE", (0,0), (-1,-1), 8.5),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, C_GRIS_L]),
+            ("BOX", (0,0), (-1,-1), 0.5, C_GRIS_M),
+            ("INNERGRID", (0,0), (-1,-1), 0.3, colors.HexColor("#D5D8DC")),
+            ("TOPPADDING", (0,0), (-1,-1), 5),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+            ("LEFTPADDING", (0,0), (-1,-1), 6),
+        ] + niv_colors_sr))
+        story.append(t_sr)
+    else:
+        story.append(Paragraph("No se han registrado evaluaciones de riesgo.", st_body))
+
+    # ── 4. SALVAGUARDAS ───────────────────────────────────────
+    story.append(Spacer(1, 0.5*cm))
+    story.append(Paragraph("4. Salvaguardas y Riesgo Residual", st_h1))
+    story.append(HRFlowable(width="100%", thickness=1, color=C_ROJO))
+    story.append(Spacer(1, 0.2*cm))
+
+    if len(df_salvs) > 0:
+        story.append(Paragraph(
+            f"Se han definido <b>{len(df_salvs)} salvaguardas</b> sobre los riesgos evaluados. "
+            f"El nivel de madurez CMM refleja el grado real de implantación de cada medida de proteccion.", st_body))
+        story.append(Spacer(1, 0.2*cm))
+
+        cmm_labels = {0:"Sin implantar", 1:"Inicial", 2:"Definido", 3:"Implantado", 4:"Evaluado"}
+        filas_salv = [["Activo", "Amenaza", "Salvaguarda", "Capa", "CMM", "Eficacia"]]
+        for _, s in df_salvs.head(20).iterrows():
+            filas_salv.append([
+                str(s["activo_nombre"])[:18],
+                str(s["amenaza_nombre"])[:25],
+                str(s["nombre"])[:25],
+                str(s["capa"])[:12],
+                cmm_labels.get(int(s["estado_cmm"] or 0), "—"),
+                f"{float(s['eficacia_objetivo'] or 0)*100:.0f}%",
+            ])
+        t_salv = Table(filas_salv, colWidths=[2.8*cm, 3.8*cm, 3.8*cm, 2*cm, 2.2*cm, 1.5*cm])
+        t_salv.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), C_GRIS),
+            ("TEXTCOLOR", (0,0), (-1,0), C_BLANCO),
+            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+            ("FONTSIZE", (0,0), (-1,-1), 7.5),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, C_GRIS_L]),
+            ("BOX", (0,0), (-1,-1), 0.5, C_GRIS_M),
+            ("INNERGRID", (0,0), (-1,-1), 0.3, colors.HexColor("#D5D8DC")),
+            ("TOPPADDING", (0,0), (-1,-1), 4),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+            ("LEFTPADDING", (0,0), (-1,-1), 4),
+        ]))
+        story.append(t_salv)
+        if len(df_salvs) > 20:
+            story.append(Paragraph(
+                f"* Se muestran las primeras 20 salvaguardas de {len(df_salvs)} registradas.", st_small))
+    else:
+        story.append(Paragraph("No se han registrado salvaguardas.", st_body))
+
+    # ── 5. CONCLUSIONES ───────────────────────────────────────
+    story.append(Spacer(1, 0.5*cm))
+    story.append(Paragraph("5. Conclusiones y Recomendaciones", st_h1))
+    story.append(HRFlowable(width="100%", thickness=1, color=C_ROJO))
+    story.append(Spacer(1, 0.2*cm))
+
+    if n_crit > 0:
+        story.append(Paragraph(
+            f"Se han identificado <b>{n_crit} riesgo(s) de nivel CRITICO</b> que requieren "
+            f"tratamiento inmediato. Estos riesgos superan el umbral de 15 puntos en la escala "
+            f"MAGERIT-OT y corresponden a activos con multiplicador OT elevado (zona Purdue 0-1 "
+            f"o activos SIS). Se recomienda priorizar la implantacion de controles IEC 62443 "
+            f"de nivel SL3 para estos activos.", st_body))
+    if n_alto > 0:
+        story.append(Paragraph(
+            f"Adicionalmente, <b>{n_alto} riesgo(s) de nivel ALTO</b> deben ser tratados "
+            f"en el proximo ciclo de auditoría. Se recomienda aplicar los controles IEC 62443 "
+            f"de nivel SL2 identificados por el Motor ML para cada activo.", st_body))
+    if comp["m2"] < 50:
+        story.append(Paragraph(
+            f"La cobertura de amenazas es del <b>{comp['m2']}%</b>, lo que indica que "
+            f"existen activos OT sin evaluacion de riesgo. Se recomienda completar la "
+            f"evaluacion de todos los activos antes de la proxima revision NIS2.", st_body))
+    story.append(Spacer(1, 0.3*cm))
+    story.append(Paragraph(
+        "Este informe ha sido generado automaticamente por la herramienta MAGERIT-OT v2.0, "
+        "basada en la metodologia MAGERIT v3.0 adaptada al entorno OT/ICS y alineada con "
+        "la norma IEC 62443-4-2:2019 y la Directiva NIS2 (UE 2022/2555).", st_small))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
+
 def calcular_completitud(df_act, df_ev, conn):
     # Todos los valores escalares con int() seguro via scalar()
     def sc(x):
@@ -1227,6 +1614,25 @@ def render_dashboard():
     comp = calcular_completitud(df_act, df_ev, conn)
     render_completitud(comp)
     conn.close()
+
+    # ── Botón exportar PDF ───────────────────────────────────
+    col_exp1, col_exp2 = st.columns([3,1])
+    with col_exp2:
+        if st.button("📄 Exportar Informe PDF", use_container_width=True):
+            try:
+                conn_pdf = get_conn()
+                pdf_bytes = generar_informe_pdf(conn_pdf)
+                conn_pdf.close()
+                fecha_fn = datetime.now().strftime("%Y%m%d_%H%M")
+                st.download_button(
+                    label="⬇️ Descargar PDF",
+                    data=pdf_bytes,
+                    file_name=f"informe_magerit_ot_{fecha_fn}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+            except Exception as e:
+                st.error(f"Error generando PDF: {e}")
 
     # KPIs
     col1,col2,col3,col4,col5 = st.columns(5)
@@ -1558,7 +1964,7 @@ def render_activos():
     </div>
     """, unsafe_allow_html=True)
 
-    tab1, tab2, tab3 = st.tabs(["Nuevo Activo", "Inventario", "Dependencias"])
+    tab1, tab2, tab3, tab4 = st.tabs(["➕ Nuevo Activo", "📋 Inventario", "🔗 Dependencias", "📎 Evidencias"])
 
     with tab1:
         with st.form("form_activo"):
@@ -1695,6 +2101,10 @@ def render_activos():
     with tab2:
         conn = get_conn()
         df = pd.read_sql("SELECT * FROM activos ORDER BY id DESC", conn)
+        # Cargar conteo evidencias por activo
+        df_ev_count = pd.read_sql(
+            "SELECT activo_id, COUNT(*) as n_ev FROM evidencias GROUP BY activo_id", conn)
+        ev_count_map = {int(r["activo_id"]): int(r["n_ev"]) for _, r in df_ev_count.iterrows()}
         conn.close()
         if len(df) == 0:
             st.info("No hay activos. Añade uno en la pestaña 'Nuevo Activo'.")
@@ -1710,6 +2120,13 @@ def render_activos():
                 zona_lbl  = ZONAS_PURDUE.get(int(r.zona_purdue or 2), "")
                 sis_html  = '<span style="background:#1e1b4b;color:#a5b4fc;border:1px solid #6366f1;border-radius:4px;padding:2px 7px;font-size:0.62rem;margin-left:6px;">SIS</span>' if r.es_sis else ""
                 tipo_desc = TIPOS_ACTIVO_OT.get(str(r.tipo or ""), {}).get("descripcion", "")
+                n_evidencias = ev_count_map.get(int(r["id"]), 0)
+                ev_badge = (f'<span style="font-family:JetBrains Mono;font-size:0.6rem;color:#22c55e;'
+                           f'border:1px solid #22c55e55;border-radius:3px;padding:1px 5px;margin-left:6px;">'
+                           f'📎 {n_evidencias} evidencia(s)</span>') if n_evidencias > 0 else (
+                           f'<span style="font-family:JetBrains Mono;font-size:0.6rem;color:#6a5a5a;'
+                           f'border:1px solid #33000055;border-radius:3px;padding:1px 5px;margin-left:6px;">'
+                           f'📎 Sin evidencias</span>')
 
                 html = (
                     '<div style="background:rgba(16,2,2,0.88);border:1px solid rgba(200,0,0,0.18);'
@@ -1723,6 +2140,7 @@ def render_activos():
                     '</div>'
                     '<div style="font-size:0.62rem;color:#6a5a5a;">' + zona_lbl + '</div>'
                     '<div style="font-size:0.6rem;color:#4a3a3a;font-style:italic;">' + tipo_desc + '</div>'
+                    + ev_badge +
                     '</div>'
                     '<div style="display:flex;gap:1.2rem;align-items:center;flex-wrap:wrap;">'
                     '<div style="text-align:center;"><div style="font-size:1.2rem;font-weight:800;color:#e01010;font-family:Syne,sans-serif;">' + str(v_D) + '</div><div style="font-size:0.55rem;color:#9a8a8a;">DISP</div></div>'
@@ -1786,6 +2204,131 @@ def render_activos():
                     <span style="color:#e01010;">→ depende de →</span>
                     <span style="color:#f0eded; font-size:0.78rem;">{dep['padre']}</span>
                 </div>""", unsafe_allow_html=True)
+
+    with tab4:
+        st.markdown('<div class="sec-title">Evidencias de Auditoría por Activo</div>', unsafe_allow_html=True)
+        st.markdown("""
+        <div class="info-box">
+        📎 Adjunta documentación que acredite la implantación de controles: procedimientos, certificados,
+        capturas de configuración, actas de revisión, etc. Estas evidencias son necesarias para demostrar
+        el cumplimiento ante una inspección NIS2.
+        </div>
+        """, unsafe_allow_html=True)
+
+        conn = get_conn()
+        df_act_ev = pd.read_sql("SELECT id, nombre, tipo, seccion_aceria FROM activos ORDER BY nombre", conn)
+
+        if len(df_act_ev) == 0:
+            st.info("No hay activos registrados. Añade activos primero.")
+            conn.close()
+        else:
+            col_ev1, col_ev2 = st.columns([1, 2])
+
+            with col_ev1:
+                activo_ev_opts = {r["nombre"]: r["id"] for _, r in df_act_ev.iterrows()}
+                activo_ev_sel  = st.selectbox("Seleccionar activo", list(activo_ev_opts.keys()),
+                    key="ev_activo_sel")
+                activo_ev_id = activo_ev_opts[activo_ev_sel]
+
+                # Conteo evidencias del activo
+                n_ev_act = conn.execute(
+                    "SELECT COUNT(*) FROM evidencias WHERE activo_id=?", (activo_ev_id,)
+                ).fetchone()[0]
+                st.markdown(
+                    f'<div style="font-family:JetBrains Mono;font-size:0.7rem;color:#9a8a8a;'
+                    f'margin:0.4rem 0;">📎 {n_ev_act} evidencia(s) registrada(s)</div>',
+                    unsafe_allow_html=True)
+
+                st.markdown('<div class="sec-title">Subir nueva evidencia</div>', unsafe_allow_html=True)
+                fichero = st.file_uploader(
+                    "Selecciona fichero",
+                    type=["pdf","docx","doc","png","jpg","jpeg","xlsx","txt"],
+                    key="ev_uploader"
+                )
+                descripcion_ev = st.text_input("Descripción de la evidencia",
+                    placeholder="Ej: Procedimiento backup PLCs v2.1",
+                    key="ev_desc")
+
+                if fichero is not None:
+                    tipo_map = {
+                        "pdf":"PDF","docx":"Word","doc":"Word","png":"Imagen",
+                        "jpg":"Imagen","jpeg":"Imagen","xlsx":"Excel","txt":"Texto"
+                    }
+                    ext = fichero.name.split(".")[-1].lower()
+                    tipo_fich = tipo_map.get(ext, "Otro")
+                    datos = fichero.read()
+                    tamanio = len(datos)
+
+                    if st.button("💾 Guardar Evidencia", use_container_width=True, key="ev_save"):
+                        conn.execute("""INSERT INTO evidencias
+                            (activo_id, nombre_fichero, tipo_fichero, descripcion, datos, tamanio)
+                            VALUES (?,?,?,?,?,?)""",
+                            (activo_ev_id, fichero.name, tipo_fich,
+                             descripcion_ev, datos, tamanio))
+                        conn.commit()
+                        st.success(f"✅ Evidencia '{fichero.name}' guardada.")
+                        st.rerun()
+
+            with col_ev2:
+                st.markdown('<div class="sec-title">Evidencias registradas</div>', unsafe_allow_html=True)
+                df_evids = pd.read_sql(
+                    """SELECT id, nombre_fichero, tipo_fichero, descripcion,
+                              tamanio, datos, created_at
+                       FROM evidencias WHERE activo_id=? ORDER BY created_at DESC""",
+                    conn, params=(activo_ev_id,))
+
+                if len(df_evids) == 0:
+                    st.info("No hay evidencias para este activo.")
+                else:
+                    for _, ev in df_evids.iterrows():
+                        tipo_col = {"PDF":"#ef4444","Word":"#3b82f6","Imagen":"#22c55e",
+                                    "Excel":"#16a34a","Texto":"#9a8a8a"}.get(
+                                    str(ev["tipo_fichero"]),"#9a8a8a")
+                        tam_kb = round(int(ev["tamanio"] or 0) / 1024, 1)
+                        fecha_ev = str(ev["created_at"])[:10]
+
+                        col_info, col_dl, col_del = st.columns([4, 1, 1])
+                        with col_info:
+                            st.markdown(
+                                '<div style="background:rgba(10,0,0,0.6);border:1px solid #220000;'
+                                'border-left:3px solid ' + tipo_col + ';border-radius:6px;'
+                                'padding:0.5rem 0.8rem;margin-bottom:4px;">'
+                                '<div style="display:flex;align-items:center;gap:0.6rem;">'
+                                '<span style="font-family:JetBrains Mono;font-size:0.65rem;color:' + tipo_col + ';'
+                                'border:1px solid ' + tipo_col + '55;border-radius:3px;padding:1px 5px;">'
+                                + str(ev["tipo_fichero"]) + '</span>'
+                                '<span style="font-size:0.78rem;color:#f0eded;font-weight:600;">'
+                                + str(ev["nombre_fichero"]) + '</span>'
+                                '</div>'
+                                '<div style="font-size:0.65rem;color:#9a8a8a;margin-top:2px;">'
+                                + (str(ev["descripcion"]) if ev["descripcion"] else "Sin descripción")
+                                + f' · {tam_kb} KB · {fecha_ev}</div>'
+                                '</div>',
+                                unsafe_allow_html=True
+                            )
+                        with col_dl:
+                            # Determinar mime type
+                            ext_dl = str(ev["nombre_fichero"]).split(".")[-1].lower()
+                            mime_map = {"pdf":"application/pdf","docx":"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                        "doc":"application/msword","png":"image/png","jpg":"image/jpeg",
+                                        "jpeg":"image/jpeg","xlsx":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                        "txt":"text/plain"}
+                            mime_type = mime_map.get(ext_dl, "application/octet-stream")
+                            st.download_button(
+                                "⬇️",
+                                data=bytes(ev["datos"]),
+                                file_name=str(ev["nombre_fichero"]),
+                                mime=mime_type,
+                                key=f"dl_ev_{ev['id']}",
+                                use_container_width=True
+                            )
+                        with col_del:
+                            if st.button("🗑️", key=f"del_ev_{ev['id']}", use_container_width=True):
+                                conn.execute("DELETE FROM evidencias WHERE id=?", (ev["id"],))
+                                conn.commit()
+                                st.rerun()
+
+            conn.close()
 
 # ══════════════════════════════════════════════════════════════
 # MÓDULO 3 — AMENAZAS OT
